@@ -468,7 +468,7 @@ class LLVMBuilder(Builder):
         # 2. All other accesses to cmake_defines interally use string literals
         # 3. If there is an unknown value in cmake_defines, it comes from the user,
         #    which is just being passed along to cmake, so we don't care about it
-        cmake_cmd += [f'-D{key}={self.cmake_defines[key]}' for key in sorted(self.cmake_defines)]  # ty: ignore[invalid-key]
+        cmake_cmd += [f'-D{key}={self.cmake_defines[key]}' for key in sorted(self.cmake_defines)]  # ty: ignore[non-literal-typed-dict-key]
 
         self.clean_build_folder()
         self.run_cmd(cmake_cmd)
@@ -485,6 +485,7 @@ class LLVMBuilder(Builder):
         llvm_build_runtime = self.cmake_defines.get('LLVM_BUILD_RUNTIME', 'ON') == 'ON'
         build_compiler_rt = self.project_is_enabled('compiler-rt') and llvm_build_runtime
         llvm_build_tools = self.cmake_defines.get('LLVM_BUILD_TOOLS', 'ON') == 'ON'
+        llvm_link_dylib = self.cmake_defines.get('LLVM_LINK_LLVM_DYLIB') == 'ON'
 
         distribution_components: list[str] = []
         runtime_distribution_components: list[str] = []
@@ -549,6 +550,15 @@ class LLVMBuilder(Builder):
                     for item in self.llvm_driver_binaries('clang')
                     if item not in distribution_components
                 ]
+            if self.distribution_profile in {'kernel', 'rust'}:
+                distribution_components.append('libclang')
+                # With LLVM_LINK_LLVM_DYLIB=ON, omitting this results in:
+                #
+                # clang/cmake/modules/CMakeLists.txt:
+                #   install(EXPORT "ClangTargets" ...) includes target "libclang" which
+                #   requires target "LLVM" that is not in any export set.
+                if llvm_link_dylib:
+                    distribution_components.append('LLVM')
         if self.project_is_enabled('lld'):
             distribution_components.append('lld')
 
